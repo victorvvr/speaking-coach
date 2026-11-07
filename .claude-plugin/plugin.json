@@ -1,0 +1,12 @@
+{
+  "name": "speaking-coach",
+  "displayName": "Speaking Coach",
+  "version": "0.2.0",
+  "description": "For people who dictate to Claude: after each message you send, three short lines above the message box say what you did well, one speaking habit to work on, and one of your sentences said better. Never about spelling or speech-to-text mistakes, and the chat's Claude never sees it.",
+  "author": { "name": "victorvvr", "url": "https://github.com/victorvvr" },
+  "homepage": "https://github.com/victorvvr/speaking-coach",
+  "repository": "https://github.com/victorvvr/speaking-coach",
+  "license": "MIT",
+  "keywords": ["speech-to-text", "dictation", "speaking", "coach", "voice"],
+  "types": "./types/index.d.ts"
+}

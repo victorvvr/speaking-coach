@@ -1,0 +1,8 @@
+{
+  "name": "victorvvr-speaking-coach",
+  "owner": { "name": "victorvvr" },
+  "metadata": {
+    "description": "Speaking Coach: three short lines of speaking feedback after each message you dictate to Claude."
+  },
+  "plugins": [{ "name": "speaking-coach", "source": "./" }]
+}
