@@ -1,10 +1,11 @@
 /**
- * The coach's three lines on one message the person sent.
+ * The coach's lines on one message the person sent.
  */
 export type CoachFeedback = {
   good: string
   workOn: string
-  better: string
+  // One of their sentences said better; null when the message was clean.
+  better: string | null
   // When the message was sent, ms since the epoch.
   at: number
 }

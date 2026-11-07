@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PromptSubmitInput, Register } from 'claude-code'
 
 import type { CoachFeedback } from '../types'
-import { MIN_WORDS, SYSTEM, buildPrompt, looksLikeTheirs, ownWords, parseFeedback, wordCount } from './coach'
+import { MIN_WORDS, SYSTEM, buildPrompt, looksLikeTheirs, ownWords, parseFeedback, replyBefore, wordCount } from './coach'
 
 // The coach's model: Sonnet at low effort answers in a few seconds and reads
 // how something was said well enough to coach it.
@@ -56,22 +56,25 @@ export function coachable(e: PromptSubmitInput): string | null {
 // dropped. A reload starts it over, which costs at most one stale answer.
 let latest = 0
 
-async function coach($: EngineInterface, words: string, ticket: number): Promise<void> {
+async function coach($: EngineInterface, words: string, sent: string, ticket: number): Promise<void> {
   try {
     const model = await $.session.model().catch(() => '')
     const overrides = await $.settings.read({ key: 'modelOverrides' }).catch(() => undefined)
     if (isOffClaude(model, overrides)) return
     const at = await $.clock.now()
+    // The end of Claude's last reply, so the coach knows what the chat is about;
+    // the chat's Claude never sees the coach's call or its lines.
+    const messages = await $.session.messages().catch(() => [])
     const reply = await $.model.complete({
       model: MODEL,
       system: SYSTEM,
-      prompt: buildPrompt(words),
+      prompt: buildPrompt(words, replyBefore(messages, sent)),
       maxTokens: 400,
       effort: 'low',
       timeoutMs: 60_000,
     })
     if (!reply.isAnswered || ticket !== latest) return
-    const lines = parseFeedback(reply.text)
+    const lines = parseFeedback(reply.text, words)
     if (lines === null) return
     await update($, feedbackAtom, () => ({ ...lines, at }))
     await update($, hiddenAtom, () => false)
@@ -88,14 +91,15 @@ export const register: Register = on => {
       latest += 1
       const ticket = latest
       $.clock.after(0, () => {
-        void coach($, words, ticket)
+        void coach($, words, e.text, ticket)
       })
     }
 
     return next(e)
   })
 
-  // Three lines above the message box, replaced by each new message's, with
+  // Three lines above the message box (two when the message was clean and there
+  // is nothing to say better), replaced by each new message's, with
   // the surface's own close control. Nothing while none has come yet, and
   // nothing in a subagent's view or while a survey shows.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -120,10 +124,12 @@ export const register: Register = on => {
               <Text weight="semibold">Work on: </Text>
               {feedback.workOn}
             </Text>
-            <Text>
-              <Text weight="semibold">Better: </Text>
-              {feedback.better}
-            </Text>
+            {feedback.better ? (
+              <Text>
+                <Text weight="semibold">Better: </Text>
+                {feedback.better}
+              </Text>
+            ) : null}
           </Box>
           <Button key="speaking-coach-close" plain dimColor role="dismiss" label="Close" onPress={close} />
         </Box>

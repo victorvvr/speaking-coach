@@ -8,7 +8,9 @@ Work on: You said "like" 14 times and started two sentences over. Pause silently
 Better: Our customers read everything, so let's keep the long page and also put the price at the top.
 ```
 
-It coaches how you say things, not how short you are. Your reasons, feelings and personality stay in the "Better" line; only fillers, restarts and repeats go. It never mentions spelling, misheard words or punctuation, because those come from the speech-to-text, not from you.
+It coaches how you say things, not how short you are: restarts, repeats, fillers (with their count) and points lost in a tangle. Your reasons, feelings and personality stay in the "Better" line; only fillers, restarts and repeats go. It never mentions spelling, misheard words or punctuation, because those come from the speech-to-text, not from you.
+
+The listener is Claude in the middle of a chat, so the coach reads the end of Claude's last reply and never calls a word vague when the chat already makes it clear. It never makes up a problem: a clean message gets "Nothing to fix here" and no "Better" line.
 
 ## Install
 
@@ -30,9 +32,9 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 ## What it does with your messages
 
-Each message you type or dictate with at least 8 words of your own is sent to Claude (Sonnet, at low effort) in a separate call to judge it. That call uses your own Claude Code sign-in and counts toward your usage, a small amount per message. The feedback stays in the band: the chat's own Claude never sees it, and your message goes to the chat unchanged.
+Each message you type or dictate with at least 8 words of your own is sent to Claude (Sonnet, at low effort) in a separate call to judge it, with the end of Claude's reply just before it (at most 1,500 characters) so the coach knows what the chat is about. That call uses your own Claude Code sign-in and counts toward your usage, a small amount per message. The feedback stays in the band: the chat's own Claude never sees it, and your message goes to the chat unchanged.
 
-It skips short replies ("Yes, fix it"), slash commands, notifications, messages from other sessions and hidden prompts. Before judging, it takes out quoted lines (`> `), pasted blocks, code, links, file paths and anything shaped like a key. In a chat whose model is not Claude, including a Claude model your settings' `modelOverrides` send to another provider, it says nothing.
+It skips short replies ("Yes, fix it"), slash commands, notifications, messages from other sessions and hidden prompts. Before judging, it takes out quoted lines (`> `), pasted blocks, code, links, file paths and anything shaped like a key, from your message and from that reply. In a chat whose model is not Claude, including a Claude model your settings' `modelOverrides` send to another provider, it says nothing.
 
 Close the band with its close button; the next message's feedback opens it again.
 

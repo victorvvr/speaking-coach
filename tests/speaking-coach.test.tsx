@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, PromptOrigin } from 'claude-code'
 
-import { MIN_WORDS, buildPrompt, fillerCounts, looksLikeTheirs, ownWords, parseFeedback, wordCount } from '../hooks/coach'
+import { MAX_CONTEXT, MIN_WORDS, buildPrompt, fillerCounts, looksLikeTheirs, ownWords, parseFeedback, replyBefore, wordCount } from '../hooks/coach'
 import { MODEL, isOffClaude } from '../hooks/register'
 
 // A made-up dictated message that answers a reply by quoting parts of it
@@ -32,6 +32,25 @@ const ANSWER = `Good: You backed your doubt with a real customer example.
 Work on: You said "like" 14 times, mostly as filler. Pause silently instead.
 Better: Our customers read everything, so let's keep the long page and put the price at the top.`
 
+// A clean message on a subject the chat set up ("the coach", "the team"), and
+// the model's answer to it: nothing to fix, so no Better line.
+const CLEAN = 'Can I choose which people on the team get the coach and which do not?'
+const CLEAN_ANSWER = `Good: One direct question, so Claude knows exactly what to answer.
+Work on: Nothing to fix here; it was clear and clean.
+Better: none`
+
+// The chat so far: Claude's reply the person answers, which names the subject.
+const CHAT = [
+  { role: 'user', text: 'Does everyone on the team have the coach too?', toolUses: [] },
+  { role: 'assistant', text: 'Let me look.', toolUses: [] },
+  { role: 'user', text: '', toolUses: [], toolResults: [] },
+  {
+    role: 'assistant',
+    text: 'No. The team gets the context figure from your command, but the speaking coach is only on your Mac.',
+    toolUses: [],
+  },
+] as const
+
 const BAND = {
   plugin: 'speaking-coach',
   component: 'AbovePrompt',
@@ -55,11 +74,13 @@ function engine(
   answer = ANSWER,
   settings: Record<string, unknown> = {},
   beneath?: string,
+  chat: readonly { role: 'user' | 'assistant'; text: string }[] = CHAT,
 ) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 10, 7, 4) })
   const asked: { model: string; prompt: string; system: string; effort?: string }[] = []
   on('session.model', () => ({ value: model }))
   on('settings.read', () => ({ value: settings }))
+  on('session.messages', () => ({ value: chat.map(m => ({ toolUses: [], ...m })) }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
   // The band beneath the coach: empty, or another mod's line when `beneath` is given.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
@@ -102,6 +123,43 @@ test('a long dictation goes on untouched, and the coach reads only the person\'s
   expect(prompt).not.toContain('Test one change at a time')
   expect(prompt).not.toContain('reply 2')
   expect(prompt).toMatch(/"like" \d+/)
+  // The end of Claude's last reply comes along, so the coach knows what the chat is about.
+  expect(asked[0]?.system).toContain('Never call a word or a reference vague')
+  expect(prompt).toContain('the speaking coach is only on your Mac')
+  expect(prompt.indexOf('only on your Mac')).toBeLessThan(prompt.indexOf('Their message:'))
+  expect(prompt).not.toContain('Let me look.')
+})
+
+test('a clean message gets no made-up fix: two lines, no Better', async ($, on) => {
+  // The engine already holds the person's message: the reply before it is still the one read.
+  const { clock, asked } = engine(on, 'claude-opus-5-5', CLEAN_ANSWER, {}, undefined, [
+    ...CHAT,
+    { role: 'user', text: CLEAN },
+  ])
+  await $.prompt.submit(said(CLEAN))
+  await clock.settle()
+  expect(asked[0]?.prompt).toContain('the speaking coach is only on your Mac')
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+    expect((await ui.find({ type: 'Text', text: /^Work on: / }))?.text).toBe(
+      'Work on: Nothing to fix here; it was clear and clean.',
+    )
+    expect(await ui.find({ type: 'Text', text: /^Better: / })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Text' })).filter(t => /^(Good|Work on|Better): \S/.test(t.text)).length).toBe(2)
+    await ui.unmount()
+  }
+})
+
+test('a Better line that only repeats the person\'s words is not shown', async ($, on) => {
+  const copied = `Good: One direct question.\nWork on: Nothing to fix here.\nBetter: "${CLEAN}"`
+  const { clock } = engine(on, 'claude-opus-5-5', copied)
+  await $.prompt.submit(said(CLEAN))
+  await clock.settle()
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /^Good: / })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Better: / })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('the band shows the three lines on every surface, and closes', async ($, on) => {
@@ -219,6 +277,10 @@ test('the person\'s own words: what is taken out and what is counted', () => {
 
   const like = fillerCounts(own).find(f => f.word === 'like')
   expect(like?.count).toBeGreaterThan(10)
+  expect(fillerCounts('Deci, practic, vreau să, adică, practic să știu. Generalul.')).toEqual([
+    { word: 'practic', count: 2 },
+    { word: 'adică', count: 1 },
+  ])
 
   expect(ownWords('Use this key sk-example-notreal-Ab12Cd34Ef56Gh78Ij90 and https://example.com/a/b now')).toBe('Use this key and now')
   expect(ownWords('Look at /home/someone/projects/app/README.md and `npm test` then tell me')).toBe('Look at and then tell me')
@@ -236,6 +298,27 @@ test('the model\'s three lines are read in any light formatting, and only whole'
     workOn: 'Point first.',
     better: 'Do it now.',
   })
-  expect(parseFeedback('Good: Clear ask.\nWork on: Point first.')).toBeNull()
+  expect(parseFeedback('Good: Clear ask.\nWork on: Point first.')).toEqual({ good: 'Clear ask.', workOn: 'Point first.', better: null })
+  expect(parseFeedback('Good: Clear ask.\nWork on: Nothing to fix.\nBetter: None.')?.better).toBeNull()
+  expect(parseFeedback('Good: Clear ask.\nWork on: Nothing.\nBetter: Is it done?', 'So, is it, is it done?')?.better).toBeNull()
+  expect(parseFeedback('Good: Clear ask.\nWork on: Restarts.\nBetter: Is it done yet?', 'So, is it, is it done?')?.better).toBe('Is it done yet?')
+  expect(parseFeedback('Work on: Point first.\nBetter: Do it now.')).toBeNull()
   expect(parseFeedback('Here is my feedback.')).toBeNull()
+})
+
+test('the end of Claude\'s reply before the person\'s message, and nothing after it', () => {
+  expect(replyBefore([], 'Hello there')).toBe('')
+  expect(replyBefore([{ role: 'user', text: 'Hello there' }], 'Hello there')).toBe('')
+  expect(replyBefore(CHAT, CLEAN)).toBe(CHAT[3].text)
+  // Held already, with Claude's next reply begun after it: the reply before it all the same.
+  expect(replyBefore([...CHAT, { role: 'user', text: CLEAN }, { role: 'assistant', text: 'Working on it.' }], ` ${CLEAN} `)).toBe(
+    CHAT[3].text,
+  )
+  // A long reply: its end only; code, links and keys taken out as from the person's words.
+  const long = `${'Start. '.repeat(400)}Run \`npm test\` at https://example.com/x then answer sk-example-notreal-Ab12Cd34Ef56Gh78 now.`
+  const end = replyBefore([{ role: 'assistant', text: long }], CLEAN)
+  expect(end.startsWith('… ')).toBe(true)
+  expect(end.length).toBeLessThanOrEqual(MAX_CONTEXT + 2)
+  expect(end.endsWith('Run at then answer now.')).toBe(true)
+  expect(buildPrompt('Some words of theirs', '')).toContain('(none: the chat may have just started)')
 })
