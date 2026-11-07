@@ -104,25 +104,37 @@ export const register: Register = on => {
     if (e.props.hasSurvey || e.props.view.agentId !== undefined || feedback === null || isHidden) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const close = () => update($, hiddenAtom, () => true)
+    // The band is one for all mods: what the mods beneath drew stays, under the feedback.
+    const below = await next(e)
+    const others = isDrawable(below) ? below : null
 
     return (
-      <Box columnGap={2}>
-        <Box flexDirection="column" flexGrow={1}>
-          <Text>
-            <Text weight="semibold">Good: </Text>
-            {feedback.good}
-          </Text>
-          <Text>
-            <Text weight="semibold">Work on: </Text>
-            {feedback.workOn}
-          </Text>
-          <Text>
-            <Text weight="semibold">Better: </Text>
-            {feedback.better}
-          </Text>
+      <Box flexDirection="column">
+        <Box columnGap={2}>
+          <Box flexDirection="column" flexGrow={1}>
+            <Text>
+              <Text weight="semibold">Good: </Text>
+              {feedback.good}
+            </Text>
+            <Text>
+              <Text weight="semibold">Work on: </Text>
+              {feedback.workOn}
+            </Text>
+            <Text>
+              <Text weight="semibold">Better: </Text>
+              {feedback.better}
+            </Text>
+          </Box>
+          <Button key="speaking-coach-close" plain dimColor role="dismiss" label="Close" onPress={close} />
         </Box>
-        <Button key="speaking-coach-close" plain dimColor role="dismiss" label="Close" onPress={close} />
+        {others ? <Box marginTop={1}>{others}</Box> : null}
       </Box>
     )
   })
+}
+
+// Only a real element can be nested; anything else (the app's own empty band) is left out.
+const DRAWABLE = ['Box', 'Text', 'Button', 'Input', 'Select', 'Link', 'Code', 'Markdown', 'Svg', 'Raster', 'Image', 'Client']
+function isDrawable(node: unknown): boolean {
+  return typeof node === 'object' && node !== null && DRAWABLE.includes((node as { type?: string }).type ?? '')
 }

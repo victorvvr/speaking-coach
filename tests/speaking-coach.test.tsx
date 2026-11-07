@@ -49,17 +49,23 @@ const BAND = {
 const SURFACES = ['desktop', 'terminal', 'vscode', 'mobile'] as const
 
 // Nothing sits beneath the plugin: these hooks stand for the engine.
-function engine(on: On, model = 'claude-opus-5-5', answer = ANSWER, settings: Record<string, unknown> = {}) {
+function engine(
+  on: On,
+  model = 'claude-opus-5-5',
+  answer = ANSWER,
+  settings: Record<string, unknown> = {},
+  beneath?: string,
+) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 10, 7, 4) })
   const asked: { model: string; prompt: string; system: string; effort?: string }[] = []
   on('session.model', () => ({ value: model }))
   on('settings.read', () => ({ value: settings }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
-  // The engine's own band, empty: what shows when the coach draws nothing.
+  // The band beneath the coach: empty, or another mod's line when `beneath` is given.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
 
-    return <Box />
+    return beneath === undefined ? <Box /> : <Text>{beneath}</Text>
   })
   on('model.complete', (_, e) => {
     asked.push({ model: e.model, prompt: e.prompt, system: e.system ?? '', effort: e.effort })
@@ -127,6 +133,26 @@ test('the band shows the three lines on every surface, and closes', async ($, on
   const again = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await again.find({ type: 'Text', text: /^Good: / })).toBeDefined()
   await again.unmount()
+})
+
+test('another mod drawing in the band stays drawn, before and with the feedback', async ($, on) => {
+  const { clock } = engine(on, 'claude-opus-5-5', ANSWER, {}, 'A pet sleeps here.')
+
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const before = await $.ui.mount({ ...BAND, surface })
+    expect((await before.find({ type: 'Text', text: /pet sleeps/ }))?.text).toBe('A pet sleeps here.')
+    await before.unmount()
+  }
+
+  await $.prompt.submit(said(DICTATION))
+  await clock.settle()
+
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+    expect(await ui.find({ type: 'Text', text: /^Good: / })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /pet sleeps/ }))?.text).toBe('A pet sleeps here.')
+    await ui.unmount()
+  }
 })
 
 test('short answers, notifications, commands and hidden prompts are not coached', async ($, on) => {
